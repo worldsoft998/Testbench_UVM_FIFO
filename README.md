@@ -1,252 +1,191 @@
-# Async-FIFO-Verification-Using-UVM
+# AId-VO — AI-Driven Verification Optimization
 
+**A universal, AI-based verification acceleration platform** that accelerates
+functional coverage closure and reduces simulation time for *any* third-party
+testbench written in HDL/HVL/HLS languages and verification methodologies
+(UVM, etc.) — **without any modification to the testbench or its coverage
+model**.
 
+The platform treats the entire simulation environment as a **black box** and
+runs AI agents exclusively at the **simulation boundary**: it observes only
+scalar coverage percentages, UVM error/warning counts and simulation
+transcripts, and steers simulations by dynamically adjusting random seeds,
+constraint-randomization parameters (boundary plusargs) and test selection
+from the regression suite.
 
-UVM-based verification environment for an asynchronous FIFO design.
-
-This project verifies an asynchronous FIFO that transfers data between independent write and read clock domains using Gray-coded pointers and two-flop synchronizers.
-
----
-
-## Features
-
-### DUT Features
-
-- Independent write and read clocks
-- Independent active-low resets
-- Parameterized data width and FIFO depth
-- Gray-code pointer synchronization
-- Two-flop CDC synchronizers
-- Full and empty flag generation
-- Almost-full and almost-empty flag generation
-- First-Word Fall-Through (FWFT) read mode
-- Optional registered-read mode through `FALLTHROUGH` parameter
-
-### Verification Features
-
-- UVM-based testbench
-- Separate write and read agents
-- Reusable write/read burst sequences
-- Passive write and read monitors
-- Queue-based reference scoreboard
-- FIFO ordering and data-integrity checking
-- Functional coverage model
-- Configurable write/read clock ratios
+> 🎛️ **Windows users:** everything is available from one interactive menu —
+> `sim\aidvo_menu.bat` — with selectable options for **AI/ML on or off**,
+> **RL algorithm (PPO / A2C / DQN)**, **number of runs, seeds, coverage goal**
+> and more.
 
 ---
 
-## Design Overview
+## Key properties
 
-The asynchronous FIFO transfers data from the write clock domain to the read clock domain.
-
-```text
-Write Clock Domain                         Read Clock Domain
-
-wclk                                       rclk
-wrst_n                                     rrst_n
-winc                                       rinc
-wdata                                      rdata
-wfull                                      rempty
-awfull                                     arempty
-```
-
-### RTL Hierarchy
-
-```text
-async_fifo
-|
-+-- sync_r2w
-|   Synchronizes the read Gray pointer into write clock domain.
-|
-+-- sync_w2r
-|   Synchronizes the write Gray pointer into read clock domain.
-|
-+-- wptr_full
-|   Generates write address, Gray write pointer, wfull, and awfull.
-|
-+-- rptr_empty
-|   Generates read address, Gray read pointer, rempty, and arempty.
-|
-+-- fifomem
-    Dual-clock FIFO memory.
-```
+| Property | How |
+|---|---|
+| 🔒 **No testbench changes** | `RTL/` and `dv/` are never written; the only added SV file is a compilation-unit prelude outside the testbench (`sim/uvm_prelude.sv`) |
+| 🙈 **No coverage-model access** | Observation allowlist = scalar coverage % (transcript / UCDB *total*), UVM report-summary counts, log data — parsed by configured regexes, nothing else |
+| ⚡ **Zero-delay steering** | Inference happens *between* simulations; decision latency is recorded separately and never enters simulated time |
+| 🧠 **Full RL stack in pure Python** | Gymnasium environment + stable-baselines3 (PPO/A2C/DQN) with `SubprocVecEnv` parallel simulation sampling — **100% local, no external AI APIs** |
+| 🔌 **Universal** | Tests, knobs, command templates and observation regexes live in one YAML file — porting to another RTL project requires **no code change** |
+| 📊 **Proven measurement** | Symmetric baseline-vs-AI campaigns produce `comparison_report.md`, CSV and PNG with runs-to-goal, time-to-goal, AUC and speed-up factors |
 
 ---
 
-## Default Configuration
-
-| Parameter | Default Value | Description |
-|---|---:|---|
-| `DSIZE` | `8` | FIFO data width |
-| `ASIZE` | `3` | FIFO address width |
-| `DEPTH` | `2^ASIZE = 8` | FIFO depth |
-| `FALLTHROUGH` | `"TRUE"` | First-Word Fall-Through read mode |
-
-> Change `DSIZE` and `ASIZE` from the testbench configuration package or top-level configuration, depending on project setup.
-
----
-
-
-## UVM Testbench Architecture
+## Repository structure
 
 ```text
-fifo_tb
-|
-+-- async_fifo_if
-|
-+-- async_fifo DUT
-|
-+-- fifo_base_test
-    |
-    +-- fifo_env
-        |
-        +-- fifo_write_agent
-        |   |
-        |   +-- fifo_write_sequencer
-        |   +-- fifo_write_driver
-        |   +-- fifo_write_monitor
-        |
-        +-- fifo_read_agent
-        |   |
-        |   +-- fifo_read_sequencer
-        |   +-- fifo_read_driver
-        |   +-- fifo_read_monitor
-        |
-        +-- fifo_sb
-        |
-        +-- fifo_coverage_model
-```
-
- NOTE: Use Dark Theme to see diagram properly
- 
-
-
-### Data Flow
-
-```text
-Write Sequence
-    |
-    v
-Write Driver --> DUT --> Write Monitor --> Scoreboard / Coverage
-
-Read Sequence
-    |
-    v
-Read Driver  --> DUT --> Read Monitor  --> Scoreboard / Coverage
+.
+├── README.md                     ← you are here (AId-VO platform)
+├── requirements.txt              ← Python dependencies (local-only RL stack)
+├── RTL/                          ← sample design: async FIFO (unmodified)
+├── dv/                           ← sample design: UVM testbench (unmodified)
+├── config/
+│   └── aidvo_config.yaml         ← the ONLY project-specific file (knobs, commands, regexes)
+├── sim/                          ← QuestaSim scripts + Windows batch launchers
+│   ├── aidvo_menu.bat            ← interactive menu (AI on/off, algorithm, runs, seeds, goal)
+│   ├── compile.bat / compile.sh  ← compile the unmodified testbench
+│   ├── run_single.bat / .sh      ← one boundary-controlled simulation
+│   ├── run_baseline.bat          ← AI/ML OFF campaign
+│   ├── run_ai.bat                ← AI/ML ON: train + evaluate
+│   ├── compare.bat               ← baseline vs AI report
+│   ├── files.f, run.do           ← file list / batch do-file
+│   └── uvm_prelude.sv            ← compilation-unit prelude (not part of the TB)
+├── aidvo/                        ← Python platform (pure Python + Gymnasium + SB3)
+│   ├── config.py                 ← YAML config, action-space decoding
+│   ├── boundary/                 ← SimRunner + scalar transcript/report parsers
+│   ├── env/coverage_env.py       ← Gymnasium black-box environment
+│   ├── agents/                   ← baseline (AI off), SB3 trainer, policy rollout
+│   ├── analysis/                 ← history records + comparison report
+│   └── cli.py                    ← check-config / compile / baseline / train / rollout / compare
+├── docs/
+│   ├── 00_original_testbench_readme.md   ← preserved original repository README
+│   ├── 01_design_specification.md        ← async FIFO spec (sample design)
+│   ├── 02_testplan.md                    ← test plan (sample design)
+│   ├── 03_testbench_architecture.md      ← UVM architecture (sample design)
+│   ├── 04_aidvo_architecture.md          ← AId-VO architecture + diagrams
+│   ├── 05_aidvo_usage_guide.md           ← full usage guide
+│   ├── 06_aidvo_compliance.md            ← non-modification rules & enforcement
+│   └── 07_aidvo_comparison_methodology.md← with-AI vs without-AI methodology
+├── tests/test_parsers.py         ← self-tests (no simulator/training required)
+├── results/                      ← campaign outputs (see results/README.md)
+├── models/                       ← trained policies (created by `aidvo train`)
+└── AId-VO_repository.zip         ← downloadable ZIP of the entire tree
 ```
 
 ---
 
+## Quick start
 
-## Implemented Tests
+### Prerequisites
 
-| Test ID | UVM Test Name | Description |
-|---|---|---|
-| `FIFO_TC_001` | `fifo_reset_test` | Verifies initial reset and runtime reset assertion/release behavior |
-| `FIFO_TC_002` | `fifo_single_write_read_test` | Verifies one accepted write followed by one accepted read |
-| `FIFO_TC_003` | `fifo_multiple_write_read_test` | Verifies FIFO ordering for multiple entries |
-| `FIFO_TC_004` | `fifo_write_only_test` | Verifies multiple writes without reads |
-| `FIFO_TC_005` | `fifo_read_only_test` | Verifies read attempts are blocked while FIFO is empty |
-| `FIFO_TC_006` | `fifo_almost_full_test` | Verifies `awfull` and `wfull` boundary behavior |
-| `FIFO_TC_007` | `fifo_almost_empty_test` | Verifies `arempty` and `rempty` boundary behavior |
-| `FIFO_TC_008` | `fifo_fwft_test` | Verifies first-word fall-through behavior |
-| `FIFO_TC_009` | `fifo_concrnt_rw_test` | Verifies concurrent read/write data integrity |
-| Advanced | `fifo_clock_ratio_test` | Verifies traffic under different write/read clock ratios |
+* QuestaSim on `PATH` (`vlib`, `vlog`, `vsim`, `vcover`)
+* Python 3.9+: `pip install -r requirements.txt`
+
+### Windows (interactive)
+
+```bat
+sim\aidvo_menu.bat
+```
+
+Pick `[1]` to compile, `[3]` for the **baseline (AI off)**, `[4]` for an
+**AI run** (choose PPO/A2C/DQN, timesteps, workers, runs, seed base, coverage
+goal), `[6]` for the **comparison report**.
+
+### Command line (any OS)
+
+```bash
+# 0) validate config
+python -m aidvo.cli check-config -c config/aidvo_config.yaml
+
+# 1) compile the unmodified testbench
+python -m aidvo.cli compile -c config/aidvo_config.yaml
+
+# 2) BASELINE — AI/ML OFF (constrained-random regression)
+python -m aidvo.cli baseline -c config/aidvo_config.yaml --runs 40 --seed-base 1000
+
+# 3) TRAIN — AI/ML ON (local stable-baselines3)
+python -m aidvo.cli train -c config/aidvo_config.yaml --algo ppo --timesteps 2000 --n-envs 2
+
+# 4) EVALUATE the trained policy
+python -m aidvo.cli rollout -c config/aidvo_config.yaml \
+    --model models/ppo/final --runs 40 --seed-base 1000 --goal 95 -o results/ai
+
+# 5) SIDE-BY-SIDE report (coverage progress + total simulation time)
+python -m aidvo.cli compare --baseline results/baseline --ai results/ai \
+    -o results/comparison
+```
+
+The deliverable report lands in
+`results/comparison/comparison_report.md` (+ `coverage_progress.csv/.png`).
 
 ---
 
-## Project Structure
+## How it works
 
 ```text
-async_fifo_uvm/
-|
-+-- rtl/
-|   +-- async_fifo.v
-|   +-- fifomem.v
-|   +-- sync_r2w.v
-|   +-- sync_w2r.v
-|   +-- wptr_full.v
-|   +-- rptr_empty.v
-|
-+-- dv/
-|   |
-|   +-- interfaces/
-|   |   +-- async_fifo_if.sv
-|   |
-|   +-- transactions/
-|   |   +-- fifo_tranx.sv
-|   |
-|   +-- agents/
-|   |   +-- fifo_sequencers.sv
-|   |   +-- fifo_write_driver.sv
-|   |   +-- fifo_read_driver.sv
-|   |   +-- fifo_write_monitor.sv
-|   |   +-- fifo_read_monitor.sv
-|   |   +-- fifo_write_agent.sv
-|   |   +-- fifo_read_agent.sv
-|   |
-|   +-- env/
-|   |   +-- fifo_sb.sv
-|   |   +-- fifo_coverage_model.sv
-|   |   +-- fifo_env.sv
-|   |
-|   +-- sequences/
-|   |   +-- fifo_write_sequences.sv
-|   |   +-- fifo_read_sequences.sv
-|   |   +-- fifo_single_write_sequences.sv
-|   |   +-- fifo_single_read_sequences.sv
-|   |
-|   +-- tests/
-|   |   +-- fifo_base_test.sv
-|   |   +-- fifo_reset_test.sv
-|   |   +-- fifo_single_write_read_test.sv
-|   |   +-- fifo_multiple_write_read_test.sv
-|   |   +-- fifo_write_only_test.sv
-|   |   +-- fifo_read_only_empty_test.sv
-|   |   +-- fifo_almost_full_test.sv
-|   |   +-- fifo_almost_empty_test.sv
-|   |   +-- fifo_fwft_test.sv
-|   |   +-- fifo_concrnt_rw_test.sv
-|   |   +-- fifo_clock_ratio_test.sv
-|   |
-|   +-- packages/
-|   |   +-- fifo_tb_config_pkg.sv
-|   |
-|   +-- tb_top.sv
-|
-+-- docs/
-|   +-- 01_design_specification.md
-|   +-- 02_testplan.md
-|   +-- 03_testbench_architecture.md
-|
-|
-|
-|
-+-- README.md
+        action (seed / test / plusargs)              transcript (scalars only)
+  agent ───────────────────────────────►  black-box simulation  ─────────────► agent
+  PPO / A2C / DQN   ▲                    (unmodified UVM TB,                   reward =
+  (stable-baselines3│                     QuestaSim, own work dir)              Δcoverage%
+   runs locally) ───┴───────────────────────────────────────────────────────── − errors + …
+```
 
+* **Environment** — one Gymnasium step = one boundary simulation
+  (`aidvo/env/coverage_env.py`), observation `Box(10)`, action
+  `Discrete(320)` = tests(10) × seed-buckets(8) × clock-profiles(4).
+* **Reward** — positive for coverage increments and valid runs; penalties for
+  UVM errors/warnings, stagnation and (small) wall time; bonus on goal.
+* **Parallel sampling** — `SubprocVecEnv` runs N simulations concurrently in
+  private working directories.
+* **Baseline** — identical pipeline with AI disabled: round-robin tests,
+  random seeds, default clock profile.
+* **Comparison** — both campaigns write the same `history.json` schema; the
+  report is computed purely from recorded runs (see
+  `docs/07_aidvo_comparison_methodology.md`).
 
-
+Full details: [`docs/04_aidvo_architecture.md`](docs/04_aidvo_architecture.md) ·
+Usage: [`docs/05_aidvo_usage_guide.md`](docs/05_aidvo_usage_guide.md) ·
+Rules: [`docs/06_aidvo_compliance.md`](docs/06_aidvo_compliance.md)
 
 ---
 
-## Key Learning Points
+## Sample design
 
-This project demonstrates:
+The bundled sample is an **asynchronous FIFO verified with a full UVM
+environment** (dual clock domains, Gray-code pointers, scoreboard, functional
+coverage, 10 tests incl. clock-ratio and boundary-condition tests). Its
+documentation is preserved in
+[`docs/00_original_testbench_readme.md`](docs/00_original_testbench_readme.md)
+plus `docs/01–03`.
 
-- Asynchronous FIFO architecture
-- Gray-code pointer generation
-- Two-flop pointer synchronization
-- Full and empty detection
-- First-word fall-through FIFO behavior
-- UVM agents, drivers, monitors, sequencers, and scoreboards
-- Analysis ports and analysis exports
-- Queue-based reference models
-- Functional coverage
-- Code coverage and functional coverage reporting
+The testbench exposes the boundary knobs AId-VO steers:
+`+UVM_TESTNAME` (test selection), `-sv_seed` (randomization seed) and
+`+WCLK_HALF_NS/+RCLK_HALF_NS` (constraint-randomization clock profiles that
+reshape full/empty corner-case traffic).
+
+---
+
+## Running the tests (no simulator needed)
+
+```bash
+python tests/test_parsers.py
+```
+
+Covers config/action decoding, scalar transcript parsing, report-total
+parsing, command expansion, history persistence and the comparison report.
+
+---
+
+## Downloadable ZIP
+
+`AId-VO_repository.zip` at the repository root contains the complete tree
+(RTL, testbench, platform, scripts, docs, config) ready to download and run
+locally.
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE). License 2.0
-```
+This project is licensed under the [MIT License](LICENSE).

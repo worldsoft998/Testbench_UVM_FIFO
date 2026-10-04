@@ -1,0 +1,14 @@
+# AId-VO Python dependencies - everything runs locally.
+# No external AI model API is used anywhere in this project.
+#
+#   pip install -r requirements.txt
+#
+# Required for `aidvo train` / `aidvo rollout` (Gymnasium + stable-baselines3):
+gymnasium>=0.29
+stable-baselines3>=2.3          # pulls in torch automatically
+numpy>=1.24
+PyYAML>=6.0                     # config (also used by baseline/check-config/compare)
+
+# Optional: coverage-trajectory plot in the comparison report
+# (the MD/CSV report works fine without it)
+matplotlib>=3.7

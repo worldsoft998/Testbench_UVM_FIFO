@@ -1,0 +1,171 @@
+#------------------------------------------------------------------------------
+# AId-VO configuration
+#
+# This file is the ONLY place where project/testbench-specific knowledge is
+# stored.  The AId-VO Python code never reads any HDL/HVL source file, never
+# opens the coverage model, and never binds to simulator internals.  It works
+# exclusively at the simulation boundary:
+#
+#   IN  : scalar coverage percentages (transcript or UCDB summary),
+#         UVM error/warning counts, simulation transcript/log data.
+#   OUT : simulation run options only - random seed, test selection from the
+#         regression suite, and boundary plusargs (clock-ratio profiles here).
+#
+# To port AId-VO to any other project, copy this file and edit the knobs,
+# command templates and regexes.  No Python change is required.
+#------------------------------------------------------------------------------
+
+project:
+  name: "AId-VO - Async FIFO UVM sample design"
+  testbench_root: "."            # directory containing RTL/ and dv/ (use "Testbench_UVM" if your checkout keeps them there)
+  top: fifo_tb                   # simulation top module
+  simulator: questasim
+
+paths:
+  results_dir: results
+  models_dir: models
+  # Optional 3rd-party coverage report command output to parse instead of the
+  # transcript (e.g. a `vcover report -summary` text file). Left empty, the
+  # transcript scalar (coverage.regex) is used.
+  coverage_report_file: ""
+
+#------------------------------------------------------------------------------
+# Boundary command templates.  Each entry is a LIST of argv tokens (no shell).
+# Placeholders in braces are substituted per run:
+#   {top} {seed} {work_lib} {run_dir} {log_file} {uvm_src} {repo_root}
+#   {plusargs}   -> expands to  +KEY=VALUE ...  (from the selected knob values)
+#   {extra}      -> expands to  any extra options from the `extra_options` knob
+# The Python runner executes each simulation with cwd = its own run directory,
+# so parallel workers never collide on transcript/dump.vcd output files.
+#------------------------------------------------------------------------------
+commands:
+  compile_steps:
+    - ["vlib", "work"]
+    - ["vlog", "-64", "-sv", "-mfcu", "+incdir+{uvm_src}", "{uvm_src}/uvm_pkg.sv",
+       "sim/uvm_prelude.sv", "-f", "sim/files.f"]
+  # Executed with cwd = run_dir; {work_lib} and {do_file} are absolute paths.
+  simulate:
+    ["vsim", "-64", "-c", "-work", "{work_lib}", "{top}",
+     "-sv_seed", "{seed}",
+     "{plusargs}",
+     "{extra}",
+     "-l", "{log_file}",
+     "-do", "{do_file}"]
+  # Optional: enable with -coverage on the vsim line (see `coverage.mode`).
+  merge_coverage: ["vcover", "merge", "-out", "{out}", "{inputs}"]
+  coverage_report: ["vcover", "report", "-summary", "-txt", "-output", "{out_file}", "{ucdb}"]
+  # Extra vsim options appended via the `extra_options` knob (e.g. -coverage).
+  # Add "-coverage" to the list below once you switch coverage.mode to "ucdb".
+  extra_options_default: []
+  timeout_s: 900                # hard wall-clock timeout per simulation
+
+uvm:
+  # Auto-detection order in the runner: UVM_SRC env > UVM_HOME/src >
+  # QUESTA_HOME/verilog_src/uvm-1800.2-2017|uvm-1.2|uvm-1.1d /src > this value.
+  auto_src_guess: ""
+
+#------------------------------------------------------------------------------
+# Observation parsing - scalar quantities from the simulation transcript/log.
+# Only aggregate scalars are read: a total coverage percentage and the UVM
+# report-summary counts.  Covergroups, coverpoints, bins, classes, hierarchy
+# paths or any other coverage-model internals are NEVER parsed.
+#------------------------------------------------------------------------------
+log_parse:
+  coverage_regex: 'Average Coverage\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*%'   # last match wins (report_phase summary)
+  uvm_error_regex: 'UVM_ERROR\s*:\s*(\d+)'                              # last match = UVM report summary
+  uvm_warning_regex: 'UVM_WARNING\s*:\s*(\d+)'
+  uvm_fatal_regex: 'UVM_FATAL\s*:\s*(\d+)'
+  sim_time_regex: 'Time:\s*([0-9.eE+-]+)\s*ns'                          # last match (optional)
+
+coverage:
+  # "transcript" : scalar percentage parsed from the log (default, zero setup)
+  # "ucdb"       : merge per-run UCDBs and read the scalar TOTAL from the
+  #                summary report produced by `commands.coverage_report`
+  mode: transcript
+  # Regex applied to the coverage REPORT file when mode == "ucdb".
+  # Matches only total/aggregate percentage lines - never per-group bins.
+  report_total_regex: '(?:^|\n)\s*Total[^%\n]*?([0-9]+(?:\.[0-9]+)?)\s*%'
+  goal_pct: 95.0
+
+#------------------------------------------------------------------------------
+# Action space - the boundary knobs the RL agent may steer.
+# kind: "seed"      -> simulator random seed (-sv_seed)
+#       "uvm_test"  -> test selection from the regression suite (+UVM_TESTNAME)
+#       "plusargs"  -> one boundary plusarg profile per discrete value
+#       "extra"     -> extra simulator run options (raw argv tokens)
+# The flat Discrete action space is the product of all knob cardinalities.
+#------------------------------------------------------------------------------
+knobs:
+  - name: test
+    kind: uvm_test
+    values:
+      - fifo_reset_test
+      - fifo_single_write_read_test
+      - fifo_multiple_write_read_test
+      - fifo_write_only_test
+      - fifo_read_only_test
+      - fifo_almost_full_test
+      - fifo_almost_empty_test
+      - fifo_fwft_test
+      - fifo_concrnt_rw_test
+      - fifo_clock_ratio_test
+
+  - name: seed_bucket
+    kind: seed
+    buckets: 8                  # seed = base + bucket*stride  (+ per-episode offset)
+    base: 1000
+    stride: 1
+    vary_by_episode: true       # episode offset = episode_index * episode_stride
+    episode_stride: 100000
+
+  - name: clock_profile
+    kind: plusargs
+    # Boundary plusargs already supported by the provided testbench (fifo_tb.sv).
+    values:
+      - { WCLK_HALF_NS: 5,  RCLK_HALF_NS: 7 }   # default  10ns / 14ns
+      - { WCLK_HALF_NS: 2,  RCLK_HALF_NS: 10 }  # write much faster
+      - { WCLK_HALF_NS: 10, RCLK_HALF_NS: 2 }   # read much faster
+      - { WCLK_HALF_NS: 5,  RCLK_HALF_NS: 8 }   # asynchronous ratio
+
+#------------------------------------------------------------------------------
+# RL environment
+#------------------------------------------------------------------------------
+env:
+  max_steps_per_episode: 24     # simulations per episode (episode = coverage campaign)
+  stagnation_window: 4          # no-gain steps before stagnation pressure grows
+  time_reference_s: 60.0        # normalization reference for wall-clock time
+  # Reward = w_gain*delta% - w_err*errors - w_warn*warnings
+  #          - w_time*(wall/ref) - stagnation_penalty*(stagnation>0)
+  #          + goal_bonus on reaching the coverage goal
+  #          - invalid_penalty when the run produced no coverage scalar
+  reward:
+    coverage_gain_weight: 1.0   # per coverage-percent point gained
+    error_penalty: 2.0          # per UVM_ERROR
+    warning_penalty: 0.05       # per UVM_WARNING
+    fatal_penalty: 10.0         # per UVM_FATAL / invalid run
+    time_penalty: 0.20
+    stagnation_penalty: 0.30
+    goal_bonus: 30.0
+    invalid_penalty: 5.0
+    valid_bonus: 0.1            # small positive reward for a valid (parseable, clean) run
+
+#------------------------------------------------------------------------------
+# Baseline (AI/ML OFF): plain constrained-random regression for comparison
+#------------------------------------------------------------------------------
+baseline:
+  strategy: round_robin         # round_robin | random (tests)
+  randomize_seed: true          # random seed bucket per run (still from seed_base)
+  clock_profile_index: 0        # default TB clock profile - no AI steering
+  runs: 40
+  seed_base: 1000
+
+#------------------------------------------------------------------------------
+# Training (stable-baselines3, entirely local - no external AI services)
+#------------------------------------------------------------------------------
+train:
+  algo: ppo                     # ppo | a2c | dqn
+  timesteps: 2000
+  n_envs: 2                     # parallel simulation workers (SubprocVecEnv)
+  seed: 0
+  learning_rate: 0.0003
+  checkpoint_freq: 500
