@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+.env
+
+# VPI / simulator build artifacts
+*.dll
+*.so
+*.sl
+*.vpi
+*.pli
+*.d
+*.obj
+*.exp
+*.lib
+
+# QuestaSim / simulation runtime artifacts
+*.log
+*.vcd
+*.fsm
+*.db
+*.ucdb
+*.wlf
+*.wdb
+*.shm
+transcript
+vsim.prv
+
+# Results (user-generated)
+results/*/
+!results/
+!results/*/
+!results/*/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archive
+*.zip
