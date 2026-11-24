@@ -1,4 +1,0 @@
-# AId-UVO-RT — Python dependencies (local-only AI)
-# Training and inference run entirely on the local machine. No external AI APIs.
-
-numpy>=1.21.0
